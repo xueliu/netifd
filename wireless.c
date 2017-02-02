@@ -556,6 +556,18 @@ void wireless_init(void)
 	netifd_init_script_handlers(drv_fd, wireless_add_handler);
 }
 
+void wpan_init(void) {
+	vlist_init(&wireless_devices, avl_strcmp, wdev_update);
+	wireless_devices.keep_old = true;
+	wireless_devices.no_delete = true;
+
+	avl_init(&wireless_drivers, avl_strcmp, false, NULL);
+	drv_fd = netifd_open_subdir("wpan");
+	if (drv_fd < 0) return;
+
+	netifd_init_script_handlers(drv_fd, wireless_add_handler);
+}
+
 static void
 wireless_interface_init_config(struct wireless_interface *vif)
 {
