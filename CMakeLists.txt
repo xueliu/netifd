@@ -5,12 +5,17 @@ ADD_DEFINITIONS(-Os -Wall -Werror --std=gnu99 -Wmissing-declarations)
 
 SET(CMAKE_SHARED_LIBRARY_LINK_C_FLAGS "")
 
+IF(APPLE)
+  INCLUDE_DIRECTORIES(/opt/local/include)
+  LINK_DIRECTORIES(/opt/local/lib)
+ENDIF()
+
 SET(SOURCES
 	main.c utils.c system.c tunnel.c handler.c
 	interface.c interface-ip.c interface-event.c
 	iprule.c proto.c proto-static.c proto-shell.c
 	config.c device.c bridge.c vlan.c alias.c
-	macvlan.c ubus.c vlandev.c wireless.c)
+	macvlan.c ubus.c vlandev.c wireless.c wpan.c)
 
 
 SET(LIBS

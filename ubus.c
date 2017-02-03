@@ -23,6 +23,7 @@
 #include "ubus.h"
 #include "system.h"
 #include "wireless.h"
+#include "wpan.h"
 
 struct ubus_context *ubus_ctx = NULL;
 static struct blob_buf b;
@@ -204,7 +205,7 @@ netifd_dev_status(struct ubus_context *ctx, struct ubus_object *obj,
 	blobmsg_parse(dev_policy, __DEV_MAX, tb, blob_data(msg), blob_len(msg));
 
 	if (tb[DEV_NAME]) {
-		dev = device_find(blobmsg_data(tb[DEV_NAME]));
+		dev = device_get(blobmsg_data(tb[DEV_NAME]), false);
 		if (!dev)
 			return UBUS_STATUS_INVALID_ARGUMENT;
 	}
@@ -402,7 +403,8 @@ netifd_add_interface_errors(struct blob_buf *b, struct interface *iface)
 }
 
 static void
-interface_ip_dump_address_list(struct interface_ip_settings *ip, bool v6, bool enabled)
+interface_ip_dump_address_list(struct interface_ip_settings *ip, bool v6,
+                               bool enabled)
 {
 	struct device_addr *addr;
 	char *buf;
@@ -484,9 +486,6 @@ interface_ip_dump_route_list(struct interface_ip_settings *ip, bool enabled)
 
 		if (route->flags & DEVROUTE_TYPE)
 			blobmsg_add_u32(&b, "type", route->type);
-
-		if (route->flags & DEVROUTE_PROTO)
-			blobmsg_add_u32(&b, "proto", route->proto);
 
 		if (route->flags & DEVROUTE_MTU)
 			blobmsg_add_u32(&b, "mtu", route->mtu);
@@ -602,23 +601,15 @@ interface_ip_dump_prefix_assignment_list(struct interface *iface)
 			if (prefix->valid_until)
 				blobmsg_add_u32(&b, "valid", prefix->valid_until - now);
 
-			void *c = blobmsg_open_table(&b, "local-address");
-			if (assign->enabled) {
-				buf = blobmsg_alloc_string_buffer(&b, "address", buflen);
-				inet_ntop(AF_INET6, &assign->addr, buf, buflen);
-				blobmsg_add_string_buffer(&b);
-
-				blobmsg_add_u32(&b, "mask", assign->length < 64 ? 64 : assign->length);
-			}
-			blobmsg_close_table(&b, c);
-
 			blobmsg_close_table(&b, a);
 		}
 	}
 }
 
+
 static void
-interface_ip_dump_dns_server_list(struct interface_ip_settings *ip, bool enabled)
+interface_ip_dump_dns_server_list(struct interface_ip_settings *ip,
+                                  bool enabled)
 {
 	struct dns_server *dns;
 	int buflen = 128;
@@ -635,7 +626,8 @@ interface_ip_dump_dns_server_list(struct interface_ip_settings *ip, bool enabled
 }
 
 static void
-interface_ip_dump_dns_search_list(struct interface_ip_settings *ip, bool enabled)
+interface_ip_dump_dns_search_list(struct interface_ip_settings *ip,
+                                  bool enabled)
 {
 	struct dns_search_domain *dns;
 
@@ -694,9 +686,8 @@ netifd_dump_status(struct interface *iface)
 		if (iface->ip4table)
 			blobmsg_add_u32(&b, "ip4table", iface->ip4table);
 		if (iface->ip6table)
-			blobmsg_add_u32(&b, "ip6table", iface->ip6table);
+			blobmsg_add_u32(&b, "ip6table", iface->ip6table);		  
 		blobmsg_add_u32(&b, "metric", iface->metric);
-		blobmsg_add_u32(&b, "dns_metric", iface->dns_metric);
 		blobmsg_add_u8(&b, "delegation", !iface->proto_ip.no_delegation);
 		a = blobmsg_open_array(&b, "ipv4-address");
 		interface_ip_dump_address_list(&iface->config_ip, false, true);
@@ -1147,6 +1138,146 @@ static struct ubus_object wireless_object = {
 	.n_methods = ARRAY_SIZE(wireless_object_methods),
 };
 
+static struct wpan_device*
+get_wpan_dev(struct blob_attr *msg, int *ret) {
+	struct blobmsg_policy wdev_policy = {
+		.name = "device",
+		.type = BLOBMSG_TYPE_STRING,
+	};
+	struct blob_attr *dev_attr;
+	struct wpan_device *wdev = NULL;
+
+
+	blobmsg_parse(&wdev_policy, 1, &dev_attr, blob_data(msg), blob_len(msg));
+	if (!dev_attr) {
+		*ret = UBUS_STATUS_INVALID_ARGUMENT;
+		return NULL;
+	}
+
+	wdev = vlist_find(&wpan_devices, blobmsg_data(dev_attr), wdev, node);
+	if (!wdev) {
+		*ret = UBUS_STATUS_NOT_FOUND;
+		return NULL;
+	}
+
+	*ret = 0;
+	return wdev;
+}
+
+static int
+netifd_handle_wpan_dev_up(struct ubus_context *ctx, struct ubus_object *obj,
+					  struct ubus_request_data *req, const char *method,
+					  struct blob_attr *msg) {
+	struct wpan_device *wdev;
+	int ret;
+
+	wdev = get_wpan_dev(msg, &ret);
+	if (ret == UBUS_STATUS_NOT_FOUND) return ret;
+
+	if (wdev) {
+		wpan_device_set_up(wdev);
+	} else {
+		vlist_for_each_element(&wpan_devices, wdev, node)
+		wpan_device_set_up(wdev);
+	}
+
+	return 0;
+}
+
+static int
+netifd_handle_wpan_dev_down(struct ubus_context *ctx, struct ubus_object *obj,
+						struct ubus_request_data *req, const char *method,
+						struct blob_attr *msg) {
+	struct wpan_device *wdev;
+	int ret;
+
+	wdev = get_wpan_dev(msg, &ret);
+	if (ret == UBUS_STATUS_NOT_FOUND) return ret;
+
+	if (wdev) {
+		wpan_device_set_down(wdev);
+	} else {
+		vlist_for_each_element(&wpan_devices, wdev, node)
+		wpan_device_set_down(wdev);
+	}
+
+	return 0;
+}
+
+static int
+netifd_handle_wpan_dev_status(struct ubus_context *ctx, struct ubus_object *obj,
+						  struct ubus_request_data *req, const char *method,
+						  struct blob_attr *msg) {
+	struct wpan_device *wdev;
+	int ret;
+
+	wdev = get_wpan_dev(msg, &ret);
+	if (ret == UBUS_STATUS_NOT_FOUND) return ret;
+
+	blob_buf_init(&b, 0);
+	if (wdev) {
+		wpan_device_status(wdev, &b);
+	} else {
+		vlist_for_each_element(&wpan_devices, wdev, node)
+		wpan_device_status(wdev, &b);
+	}
+	ubus_send_reply(ctx, req, b.head);
+	return 0;
+}
+
+static int
+netifd_handle_wpan_dev_get_validate(struct ubus_context *ctx, struct ubus_object *obj,
+								struct ubus_request_data *req, const char *method,
+								struct blob_attr *msg) {
+	struct wpan_device *wdev;
+	int ret;
+
+	wdev = get_wpan_dev(msg, &ret);
+	if (ret == UBUS_STATUS_NOT_FOUND) return ret;
+
+	blob_buf_init(&b, 0);
+	if (wdev) {
+		wpan_device_get_validate(wdev, &b);
+	} else {
+		vlist_for_each_element(&wpan_devices, wdev, node)
+		wpan_device_get_validate(wdev, &b);
+	}
+	ubus_send_reply(ctx, req, b.head);
+	return 0;
+}
+
+static int
+netifd_handle_wpan_dev_notify(struct ubus_context *ctx, struct ubus_object *obj,
+						  struct ubus_request_data *req, const char *method,
+						  struct blob_attr *msg) {
+	struct wpan_device *wdev;
+	int ret;
+
+	wdev = get_wpan_dev(msg, &ret);
+	if (!wdev) return ret;
+
+	return wpan_device_notify(wdev, msg, req);
+}
+
+static struct ubus_method wpan_object_methods[] = {
+	{ .name = "up", .handler = netifd_handle_wpan_dev_up },
+	{ .name = "down", .handler = netifd_handle_wpan_dev_down },
+	{ .name = "status", .handler = netifd_handle_wpan_dev_status },
+	{ .name = "notify", .handler = netifd_handle_wpan_dev_notify },
+	{ .name = "get_validate", .handler = netifd_handle_wpan_dev_get_validate },
+};
+
+static struct ubus_object_type wpan_object_type =
+	UBUS_OBJECT_TYPE("netifd_iface", wpan_object_methods);
+
+
+static struct ubus_object wpan_object = {
+	.name = "network.wpan",
+	.type = &wpan_object_type,
+	.methods = wpan_object_methods,
+	.n_methods = ARRAY_SIZE(wpan_object_methods),
+};
+
 int
 netifd_ubus_init(const char *path)
 {
@@ -1164,6 +1295,7 @@ netifd_ubus_init(const char *path)
 	netifd_add_object(&main_object);
 	netifd_add_object(&dev_object);
 	netifd_add_object(&wireless_object);
+	netifd_add_object(&wpan_object);
 	netifd_add_iface_object();
 
 	return 0;

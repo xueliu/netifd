@@ -208,6 +208,11 @@ struct device {
 	bool wireless_ap;
 	bool wireless_isolate;
 
+	bool wpan;
+	bool wpan_ap;
+	bool wpan_isolate;
+
+
 	struct interface *config_iface;
 
 	/* set interface up or down */

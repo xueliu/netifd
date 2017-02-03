@@ -11,16 +11,16 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-#ifndef __NETIFD_WIRELESS_H
-#define __NETIFD_WIRELESS_H
+#ifndef __NETIFD_WPAN_H
+#define __NETIFD_WPAN_H
 
 #include <libubox/utils.h>
 #include "interface.h"
 
-extern struct vlist_tree wireless_devices;
-extern struct avl_tree wireless_drivers;
+extern struct vlist_tree wpan_devices;
+extern struct avl_tree wpan_drivers;
 
-struct wireless_driver {
+struct wpan_driver {
 	struct avl_node node;
 
 	const char *name;
@@ -32,10 +32,10 @@ struct wireless_driver {
 	} device, interface;
 };
 
-struct wireless_device {
+struct wpan_device {
 	struct vlist_node node;
 
-	struct wireless_driver *drv;
+	struct wpan_driver *drv;
 	struct vlist_tree interfaces;
 	char *name;
 
@@ -53,9 +53,9 @@ struct wireless_device {
 	struct blob_attr *config;
 	struct blob_attr *data;
 
+	bool config_autostart;
 	bool autostart;
 	bool disabled;
-	bool retry_setup_failed;
 
 	enum interface_state state;
 	enum interface_config_state config_state;
@@ -65,12 +65,12 @@ struct wireless_device {
 	int vif_idx;
 };
 
-struct wireless_interface {
+struct wpan_interface {
 	struct vlist_node node;
 	const char *section;
 	char *name;
 
-	struct wireless_device *wdev;
+	struct wpan_device *wdev;
 
 	struct blob_attr *config;
 	struct blob_attr *data;
@@ -81,7 +81,7 @@ struct wireless_interface {
 	bool ap_mode;
 };
 
-struct wireless_process {
+struct wpan_process {
 	struct list_head list;
 
 	const char *exe;
@@ -90,17 +90,16 @@ struct wireless_process {
 	bool required;
 };
 
-void wireless_device_create(struct wireless_driver *drv, const char *name, struct blob_attr *data);
-void wireless_device_set_up(struct wireless_device *wdev);
-void wireless_device_set_down(struct wireless_device *wdev);
-void wireless_device_status(struct wireless_device *wdev, struct blob_buf *b);
-void wireless_device_get_validate(struct wireless_device *wdev, struct blob_buf *b);
-void wireless_interface_create(struct wireless_device *wdev, struct blob_attr *data, const char *section);
-int wireless_device_notify(struct wireless_device *wdev, struct blob_attr *data,
+void wpan_device_create(struct wpan_driver *drv, const char *name, struct blob_attr *data);
+void wpan_device_set_up(struct wpan_device *wdev);
+void wpan_device_set_down(struct wpan_device *wdev);
+void wpan_device_status(struct wpan_device *wdev, struct blob_buf *b);
+void wpan_device_get_validate(struct wpan_device *wdev, struct blob_buf *b);
+void wpan_interface_create(struct wpan_device *wdev, struct blob_attr *data, const char *section);
+int wpan_device_notify(struct wpan_device *wdev, struct blob_attr *data,
 			   struct ubus_request_data *req);
 
-void wireless_start_pending(void);
-void wireless_init(void);
+void wpan_start_pending(void);
 void wpan_init(void);
 
 #endif

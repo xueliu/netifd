@@ -326,8 +326,8 @@ int main(int argc, char **argv)
 
 	proto_shell_init();
 	wireless_init();
-	wpan_init();
-	
+	//wpan_init();
+
 	if (system_init()) {
 		fprintf(stderr, "Failed to initialize system control\n");
 		return 1;
